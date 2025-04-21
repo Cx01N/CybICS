@@ -1,20 +1,20 @@
-FROM debian:12-slim
+FROM frangoteam/fuxa
 
-RUN apt-get update && apt-get install -y \
-    npm \
-    curl \
-    unixodbc-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN npm install -g --unsafe-perm @frangoteam/fuxa@1.2.0
+RUN apt update && apt install -y curl iproute2 iptables
 
-WORKDIR /CybICS
-COPY ./ ./
-
-RUN set -e && fuxa & \
-    while ! curl -f -X POST -H "Content-Type: application/json" -d @/CybICS/fuxa-project.json http://localhost:1881/api/project; do sleep 1; done && \
-    curl -f -X POST -H "Content-Type: application/json" -d @/CybICS/add-user-viewer.json http://localhost:1881/api/users && \
-    curl -f -X POST -H "Content-Type: application/json" -d @/CybICS/add-user-operator.json http://localhost:1881/api/users && \
-    curl -f -X POST -H "Content-Type: application/json" -d @/CybICS/settings.json http://localhost:1881/api/settings
+COPY fuxa-project.json add-user-viewer.json add-user-operator.json settings.json /config/
 
 EXPOSE 1881
-CMD ["fuxa"]
+
+CMD bash -c "\
+  npm start & \
+  pid=\$!; \
+  echo '[*] Waiting for FUXA to become available on port 1881...'; \
+  until curl -sf http://localhost:1881; do sleep 1; done; \
+  echo '[+] FUXA is up. Seeding config...'; \
+  curl -sf -X POST -H 'Content-Type: application/json' -d @/config/fuxa-project.json http://localhost:1881/api/project || echo '[!] Project upload failed'; \
+  curl -sf -X POST -H 'Content-Type: application/json' -d @/config/add-user-viewer.json http://localhost:1881/api/users || echo '[!] Viewer upload failed'; \
+  curl -sf -X POST -H 'Content-Type: application/json' -d @/config/add-user-operator.json http://localhost:1881/api/users || echo '[!] Operator upload failed'; \
+  curl -sf -X POST -H 'Content-Type: application/json' -d @/config/settings.json http://localhost:1881/api/settings || echo '[!] Settings upload failed'; \
+  echo '[+] Config complete. Bringing FUXA to foreground.'; \
+  wait \$pid"
